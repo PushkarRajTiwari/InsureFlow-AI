@@ -13,7 +13,7 @@ public sealed class GmailService(HttpClient httpClient) : IGmailService
         using var listRequest = new HttpRequestMessage(HttpMethod.Get, $"https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults={maxResults}");
         listRequest.Headers.Authorization = new("Bearer", accessToken);
         using var listResponse = await httpClient.SendAsync(listRequest, cancellationToken);
-        listResponse.EnsureSuccessStatusCode();
+        await EnsureGoogleSuccessAsync(listResponse, cancellationToken);
         var list = await listResponse.Content.ReadFromJsonAsync<GmailListResponse>(cancellationToken: cancellationToken);
         var messages = new List<ImportedEmail>();
 
@@ -22,7 +22,7 @@ public sealed class GmailService(HttpClient httpClient) : IGmailService
             using var messageRequest = new HttpRequestMessage(HttpMethod.Get, $"https://gmail.googleapis.com/gmail/v1/users/me/messages/{item.Id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date");
             messageRequest.Headers.Authorization = new("Bearer", accessToken);
             using var messageResponse = await httpClient.SendAsync(messageRequest, cancellationToken);
-            messageResponse.EnsureSuccessStatusCode();
+            await EnsureGoogleSuccessAsync(messageResponse, cancellationToken);
             var message = await messageResponse.Content.ReadFromJsonAsync<GmailMessageResponse>(cancellationToken: cancellationToken);
             if (message is null)
             {
@@ -40,7 +40,7 @@ public sealed class GmailService(HttpClient httpClient) : IGmailService
                 headers.GetValueOrDefault("From", "Unknown sender"),
                 headers.GetValueOrDefault("Subject", "(no subject)"),
                 DecodeSnippet(message.Snippet),
-                date));
+                date.ToUniversalTime()));
         }
 
         return messages;
@@ -49,6 +49,17 @@ public sealed class GmailService(HttpClient httpClient) : IGmailService
     private static string DecodeSnippet(string snippet)
     {
         return Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(snippet)).Trim();
+    }
+
+    private static async Task EnsureGoogleSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new InvalidOperationException($"Google Gmail API returned {(int)response.StatusCode} {response.ReasonPhrase}: {body}");
     }
 }
 

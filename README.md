@@ -61,7 +61,7 @@ Use a long random value for `JWT_SECRET`.
 3. Configure Google Cloud:
 
 - Create an OAuth 2.0 Web Client.
-- Add `http://localhost:3000` as an authorized JavaScript origin.
+- Add `http://localhost:3001` as an authorized JavaScript origin.
 - Enable the Gmail API.
 - Use these scopes in consent review/testing:
   - `openid`
@@ -79,9 +79,9 @@ docker compose up --build
 
 5. Open:
 
-- Frontend: http://localhost:3000
+- Frontend: http://localhost:3001
 - API Swagger: http://localhost:8080/swagger
-- Postgres: `localhost:5432`
+- Postgres: `localhost:5433`
 
 ## Required Flow
 

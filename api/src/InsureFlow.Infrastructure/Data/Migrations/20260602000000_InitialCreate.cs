@@ -1,10 +1,13 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace InsureFlow.Infrastructure.Data.Migrations;
 
+[Migration("20260602000000_InitialCreate")]
+[DbContext(typeof(InsureFlowDbContext))]
 public partial class InitialCreate : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

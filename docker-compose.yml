@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: insureflow
       POSTGRES_PASSWORD: insureflow
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +25,7 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=insureflow;Username=insureflow;Password=insureflow
-      Frontend__Url: http://localhost:3000
+      Frontend__Url: http://localhost:3001
       Jwt__Issuer: InsureFlowAI
       Jwt__Audience: InsureFlowAI
       Jwt__Secret: ${JWT_SECRET}
@@ -47,7 +47,7 @@ services:
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
       NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules

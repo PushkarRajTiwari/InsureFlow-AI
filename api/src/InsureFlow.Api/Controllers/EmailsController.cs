@@ -1,4 +1,5 @@
 using InsureFlow.Api.Extensions;
+using InsureFlow.Application.Common;
 using InsureFlow.Application.DTOs;
 using InsureFlow.Application.Interfaces;
 using InsureFlow.Domain.Entities;
@@ -8,6 +9,7 @@ using InsureFlow.Infrastructure.External.Google;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Net;
 
 namespace InsureFlow.Api.Controllers;
 
@@ -42,7 +44,16 @@ public sealed class EmailsController(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        var imported = await gmailService.GetLatestEmailsAsync(accessToken, 100, cancellationToken);
+        IReadOnlyList<ImportedEmail> imported;
+        try
+        {
+            imported = await gmailService.GetLatestEmailsAsync(accessToken, 100, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Google Gmail API", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogError(ex, "Gmail sync failed for user {UserId}", userId);
+            return BadRequest(new { error = ex.Message });
+        }
         var existingIds = await dbContext.EmailMessages
             .Where(x => x.MailboxId == mailbox.Id)
             .Select(x => x.ExternalMessageId)
@@ -68,9 +79,30 @@ public sealed class EmailsController(
         dbContext.EmailMessages.AddRange(newMessages);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        foreach (var message in newMessages)
+        var messagesToClassify = await dbContext.EmailMessages
+            .Include(x => x.Classification)
+            .Where(x => x.MailboxId == mailbox.Id && x.Classification == null)
+            .OrderByDescending(x => x.ReceivedAt)
+            .Take(100)
+            .ToListAsync(cancellationToken);
+
+        var classifiedCount = 0;
+        var rateLimited = false;
+
+        foreach (var message in messagesToClassify)
         {
-            var result = await classificationService.ClassifyAsync(message.Subject, message.BodyPreview);
+            EmailClassificationResult result;
+            try
+            {
+                result = await classificationService.ClassifyAsync(message.Subject, message.BodyPreview);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable or HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout)
+            {
+                rateLimited = true;
+                logger.LogWarning(ex, "OpenAI temporarily unavailable while classifying email {EmailMessageId}", message.Id);
+                break;
+            }
+
             dbContext.EmailClassifications.Add(new EmailClassification
             {
                 Id = Guid.NewGuid(),
@@ -80,12 +112,21 @@ public sealed class EmailsController(
                 Reasoning = result.Reasoning,
                 ClassifiedAt = DateTimeOffset.UtcNow
             });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            classifiedCount++;
+            await Task.Delay(350, cancellationToken);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Gmail sync completed for user {UserId}. Imported {Count} new emails.", userId, newMessages.Count);
+        logger.LogInformation("Gmail sync completed for user {UserId}. Imported {ImportedCount} new emails and classified {ClassifiedCount}.", userId, newMessages.Count, classifiedCount);
 
-        return Ok(new { imported = newMessages.Count, totalChecked = imported.Count });
+        return Ok(new
+        {
+            imported = newMessages.Count,
+            totalChecked = imported.Count,
+            classified = classifiedCount,
+            remainingUnclassified = await dbContext.EmailMessages.CountAsync(x => x.MailboxId == mailbox.Id && x.Classification == null, cancellationToken),
+            rateLimited
+        });
     }
 
     [HttpGet]

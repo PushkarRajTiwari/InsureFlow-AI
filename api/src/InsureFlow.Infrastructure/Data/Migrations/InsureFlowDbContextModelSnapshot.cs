@@ -1,4 +1,5 @@
 using InsureFlow.Domain.Entities;
+using InsureFlow.Domain.Enums;
 using InsureFlow.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -62,7 +63,11 @@ public partial class InsureFlowDbContextModelSnapshot : ModelSnapshot
         {
             b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
             b.Property<DateTimeOffset>("ClassifiedAt").HasColumnType("timestamp with time zone");
-            b.Property<string>("Category").IsRequired().HasMaxLength(64).HasColumnType("character varying(64)");
+            b.Property<EmailCategory>("Category")
+                .HasConversion<string>()
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("character varying(64)");
             b.Property<decimal>("ConfidenceScore").HasPrecision(5, 4).HasColumnType("numeric(5,4)");
             b.Property<Guid>("EmailMessageId").HasColumnType("uuid");
             b.Property<string>("Reasoning").IsRequired().HasMaxLength(2000).HasColumnType("character varying(2000)");
@@ -75,7 +80,7 @@ public partial class InsureFlowDbContextModelSnapshot : ModelSnapshot
         {
             b.HasOne("InsureFlow.Domain.Entities.User", "User")
                 .WithOne("ConnectedMailbox")
-                .HasForeignKey<ConnectedMailbox>("UserId")
+                .HasForeignKey("InsureFlow.Domain.Entities.ConnectedMailbox", "UserId")
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
             b.Navigation("User");
@@ -95,7 +100,7 @@ public partial class InsureFlowDbContextModelSnapshot : ModelSnapshot
         {
             b.HasOne("InsureFlow.Domain.Entities.EmailMessage", "EmailMessage")
                 .WithOne("Classification")
-                .HasForeignKey<EmailClassification>("EmailMessageId")
+                .HasForeignKey("InsureFlow.Domain.Entities.EmailClassification", "EmailMessageId")
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
             b.Navigation("EmailMessage");

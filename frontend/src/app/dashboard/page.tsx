@@ -26,6 +26,7 @@ const categories = [
 
 export default function DashboardPage() {
   const router = useRouter();
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
   const [emails, setEmails] = useState<EmailListItem[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [category, setCategory] = useState("");
@@ -68,25 +69,14 @@ export default function DashboardPage() {
     });
   }, [query]);
 
-  const connectMailbox = useGoogleLogin({
-    flow: "auth-code",
-    scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
-    prompt: "consent",
-    onSuccess: async (codeResponse) => {
-      await apiFetch("/api/mailbox/connect", {
-        method: "POST",
-        body: JSON.stringify({ code: codeResponse.code })
-      });
-      setStatus("Gmail connected.");
-    }
-  });
-
   async function syncInbox() {
     setSyncing(true);
     setStatus("Importing and classifying latest Gmail messages...");
     try {
-      const result = await apiFetch<{ imported: number; totalChecked: number }>("/api/emails/sync", { method: "POST" });
-      setStatus(`Imported ${result.imported} new emails from ${result.totalChecked} checked messages.`);
+      const result = await apiFetch<{ imported: number; totalChecked: number; classified: number; remainingUnclassified: number; rateLimited: boolean }>("/api/emails/sync", { method: "POST" });
+      setStatus(
+        `Imported ${result.imported} new emails from ${result.totalChecked} checked messages. Classified ${result.classified} emails. ${result.remainingUnclassified} still pending.${result.rateLimited ? " OpenAI paused the run; sync again later to continue." : ""}`
+      );
       await load();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Sync failed.");
@@ -105,10 +95,7 @@ export default function DashboardPage() {
             <p className="mt-1 text-sm text-muted-foreground">Latest imported Gmail messages classified for insurance agency workflows.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => connectMailbox()}>
-              <Inbox className="h-4 w-4" />
-              Connect Gmail
-            </Button>
+            {googleClientId ? <ConnectGmailButton onConnected={() => setStatus("Gmail connected.")} /> : <Button variant="outline" disabled><Inbox className="h-4 w-4" />Connect Gmail</Button>}
             <Button onClick={syncInbox} disabled={syncing}>
               {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Sync Inbox
@@ -117,11 +104,11 @@ export default function DashboardPage() {
         </div>
 
         <section className="grid gap-4 md:grid-cols-5">
-          <StatCard label="Total Emails" value={stats?.totalEmails ?? 0} />
-          <StatCard label="Claims" value={stats?.claims ?? 0} />
-          <StatCard label="Billing" value={stats?.billing ?? 0} />
-          <StatCard label="Policy Changes" value={stats?.policyChanges ?? 0} />
-          <StatCard label="Coverage Questions" value={stats?.coverageQuestions ?? 0} />
+          <StatCard label="Total Emails" value={stats?.totalEmails ?? 0} selected={!category} onClick={() => setCategory("")} />
+          <StatCard label="Claims" value={stats?.claims ?? 0} selected={category === "Claim"} onClick={() => setCategory("Claim")} />
+          <StatCard label="Billing" value={stats?.billing ?? 0} selected={category === "Billing"} onClick={() => setCategory("Billing")} />
+          <StatCard label="Policy Changes" value={stats?.policyChanges ?? 0} selected={category === "PolicyChange"} onClick={() => setCategory("PolicyChange")} />
+          <StatCard label="Coverage Questions" value={stats?.coverageQuestions ?? 0} selected={category === "CoverageQuestion"} onClick={() => setCategory("CoverageQuestion")} />
         </section>
 
         <section className="rounded-lg border border-border bg-card">
@@ -185,16 +172,40 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function ConnectGmailButton({ onConnected }: { onConnected: () => void }) {
+  const connectMailbox = useGoogleLogin({
+    flow: "auth-code",
+    scope: "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+    prompt: "consent",
+    onSuccess: async (codeResponse) => {
+      await apiFetch("/api/mailbox/connect", {
+        method: "POST",
+        body: JSON.stringify({ code: codeResponse.code })
+      });
+      onConnected();
+    }
+  });
+
   return (
-    <Card>
+    <Button variant="outline" onClick={() => connectMailbox()}>
+      <Inbox className="h-4 w-4" />
+      Connect Gmail
+    </Button>
+  );
+}
+
+function StatCard({ label, value, selected, onClick }: { label: string; value: number; selected: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="text-left">
+      <Card className={selected ? "border-primary ring-2 ring-primary/20" : "transition-colors hover:border-primary/70"}>
       <CardHeader className="pb-2">
         <CardTitle className="text-xs uppercase text-muted-foreground">{label}</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-semibold">{value}</div>
       </CardContent>
-    </Card>
+      </Card>
+    </button>
   );
 }
 
